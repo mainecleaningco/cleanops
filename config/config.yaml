@@ -1,0 +1,327 @@
+# CleanOps Configuration File
+# Environment: development | staging | production
+
+app:
+  name: "CleanOps"
+  version: "1.0.0"
+  environment: "development"
+  debug: true
+  log_level: "INFO"
+  timezone: "UTC"
+
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  reload: true  # Development only
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:3001"
+    - "https://cleanops.company.com"
+
+# Database Configuration
+database:
+  url: "postgresql://cleanops:password@localhost:5432/cleanops"
+  pool_size: 20
+  max_overflow: 30
+  pool_timeout: 30
+  pool_recycle: 3600
+  echo: false  # Set to true for SQL debugging
+
+# Redis Configuration (for caching and task queue)
+redis:
+  url: "redis://localhost:6379/0"
+  max_connections: 20
+  socket_timeout: 5
+  socket_connect_timeout: 5
+
+# Task Queue Configuration (Celery)
+celery:
+  broker_url: "redis://localhost:6379/1"
+  result_backend: "redis://localhost:6379/2"
+  task_serializer: "json"
+  result_serializer: "json"
+  accept_content: ["json"]
+  timezone: "UTC"
+  enable_utc: true
+  task_routes:
+    "pipelines.tasks.execute_pipeline": {"queue": "pipeline_execution"}
+    "scheduler.tasks.trigger_schedule": {"queue": "scheduler"}
+    "monitoring.tasks.collect_metrics": {"queue": "monitoring"}
+
+# Pipeline Engine Configuration
+pipeline_engine:
+  max_concurrent_pipelines: 10
+  default_timeout_seconds: 3600
+  default_retry_count: 3
+  step_timeout_seconds: 1800
+  execution_history_retention_days: 90
+  log_retention_days: 30
+  temp_directory: "/tmp/cleanops/pipelines"
+  
+  # Resource limits per pipeline
+  resource_limits:
+    cpu_cores: 4.0
+    memory_mb: 8192
+    disk_gb: 50.0
+    network_bandwidth_mbps: 100
+
+# Scheduler Configuration
+scheduler:
+  enabled: true
+  check_interval_seconds: 30
+  max_concurrent_schedules: 50
+  schedule_history_retention_days: 365
+  default_timezone: "UTC"
+  
+  # Cron expression limits
+  cron_limits:
+    min_interval_minutes: 1
+    max_schedules_per_pipeline: 10
+
+# Monitoring Configuration
+monitoring:
+  enabled: true
+  metrics_collection_interval: 60  # seconds
+  alert_check_interval: 30  # seconds
+  dashboard_refresh_interval: 30  # seconds
+  
+  # Metrics retention
+  metrics_retention:
+    raw_data_days: 7
+    hourly_aggregates_days: 30
+    daily_aggregates_days: 365
+  
+  # Alert thresholds
+  alert_thresholds:
+    pipeline_failure_rate_percent: 5.0
+    pipeline_success_rate_percent: 90.0
+    execution_time_increase_percent: 50.0
+    system_cpu_percent: 80.0
+    system_memory_percent: 85.0
+    system_disk_percent: 90.0
+
+# Security Configuration
+security:
+  secret_key: "your-secret-key-here"  # Change in production
+  algorithm: "HS256"
+  access_token_expire_minutes: 30
+  refresh_token_expire_days: 7
+  
+  # Password policy
+  password_policy:
+    min_length: 8
+    require_uppercase: true
+    require_lowercase: true
+    require_numbers: true
+    require_special_chars: true
+  
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100
+    burst_size: 20
+
+# External Integrations
+integrations:
+  # Email notifications
+  email:
+    enabled: true
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    username: "notifications@company.com"
+    password: "app-password"  # Use app password for Gmail
+    use_tls: true
+    from_address: "CleanOps <notifications@company.com>"
+  
+  # Slack notifications
+  slack:
+    enabled: true
+    webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    channel: "#data-ops"
+    username: "CleanOps Bot"
+    icon_emoji: ":robot_face:"
+  
+  # Prometheus metrics
+  prometheus:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+    namespace: "cleanops"
+  
+  # External databases
+  external_databases:
+    crm_database:
+      type: "postgresql"
+      host: "crm-db.company.com"
+      port: 5432
+      database: "crm"
+      username: "readonly_user"
+      password: "secure_password"
+      pool_size: 5
+    
+    data_warehouse:
+      type: "snowflake"
+      account: "company.snowflakecomputing.com"
+      warehouse: "COMPUTE_WH"
+      database: "DATA_WAREHOUSE"
+      schema: "PUBLIC"
+      username: "etl_user"
+      password: "secure_password"
+      role: "ETL_ROLE"
+  
+  # Cloud storage
+  cloud_storage:
+    aws_s3:
+      enabled: true
+      region: "us-east-1"
+      bucket: "cleanops-data"
+      access_key_id: "YOUR_ACCESS_KEY"
+      secret_access_key: "YOUR_SECRET_KEY"
+    
+    azure_blob:
+      enabled: false
+      account_name: "cleanopsdata"
+      account_key: "YOUR_ACCOUNT_KEY"
+      container_name: "data"
+
+# Logging Configuration
+logging:
+  version: 1
+  disable_existing_loggers: false
+  
+  formatters:
+    standard:
+      format: '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+      datefmt: '%Y-%m-%d %H:%M:%S'
+    
+    json:
+      format: '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}'
+      datefmt: '%Y-%m-%dT%H:%M:%S'
+  
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: INFO
+      formatter: standard
+      stream: ext://sys.stdout
+    
+    file:
+      class: logging.handlers.RotatingFileHandler
+      level: INFO
+      formatter: json
+      filename: logs/cleanops.log
+      maxBytes: 10485760  # 10MB
+      backupCount: 5
+    
+    error_file:
+      class: logging.handlers.RotatingFileHandler
+      level: ERROR
+      formatter: json
+      filename: logs/cleanops_errors.log
+      maxBytes: 10485760  # 10MB
+      backupCount: 5
+  
+  loggers:
+    cleanops:
+      level: INFO
+      handlers: [console, file, error_file]
+      propagate: false
+    
+    uvicorn:
+      level: INFO
+      handlers: [console]
+      propagate: false
+    
+    sqlalchemy:
+      level: WARNING
+      handlers: [console]
+      propagate: false
+
+# Feature Flags
+features:
+  pipeline_versioning: true
+  advanced_scheduling: true
+  real_time_monitoring: true
+  machine_learning_insights: false  # Coming soon
+  multi_tenant_support: false  # Enterprise feature
+  audit_logging: true
+  data_lineage_tracking: true
+  cost_optimization: false  # Enterprise feature
+
+# API Configuration
+api:
+  title: "CleanOps API"
+  description: "Data Pipeline Operations Platform API"
+  version: "1.0.0"
+  docs_url: "/docs"
+  redoc_url: "/redoc"
+  openapi_url: "/openapi.json"
+  
+  # API versioning
+  versioning:
+    enabled: true
+    default_version: "v1"
+    supported_versions: ["v1"]
+  
+  # Request/Response limits
+  limits:
+    max_request_size_mb: 100
+    max_response_size_mb: 500
+    request_timeout_seconds: 300
+
+# Development Settings (only active when environment = development)
+development:
+  auto_reload: true
+  debug_toolbar: true
+  mock_external_services: true
+  sample_data_generation: true
+  performance_profiling: true
+
+# Testing Configuration
+testing:
+  database_url: "postgresql://cleanops_test:password@localhost:5432/cleanops_test"
+  redis_url: "redis://localhost:6379/15"
+  mock_external_apis: true
+  test_data_cleanup: true
+
+# Production Settings (only active when environment = production)
+production:
+  debug: false
+  auto_reload: false
+  ssl_redirect: true
+  secure_cookies: true
+  
+  # Performance optimizations
+  performance:
+    enable_gzip: true
+    static_file_caching: true
+    database_query_optimization: true
+    connection_pooling: true
+  
+  # Backup configuration
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention_days: 30
+    s3_bucket: "cleanops-backups"
+    encryption: true
+
+# Health Check Configuration
+health_checks:
+  enabled: true
+  endpoint: "/health"
+  checks:
+    - name: "database"
+      type: "database_connection"
+      timeout: 5
+    - name: "redis"
+      type: "redis_connection"
+      timeout: 3
+    - name: "disk_space"
+      type: "disk_usage"
+      threshold: 90
+    - name: "memory"
+      type: "memory_usage"
+      threshold: 85

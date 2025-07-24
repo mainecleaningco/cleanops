@@ -1,0 +1,320 @@
+{
+  "sample_pipelines": [
+    {
+      "name": "Customer Data ETL",
+      "description": "Extract customer data from CRM, transform and load into data warehouse",
+      "steps": [
+        {
+          "id": "extract_crm",
+          "name": "Extract CRM Data",
+          "type": "extract",
+          "config": {
+            "source_type": "postgresql",
+            "connection_string": "postgresql://user:pass@crm-db:5432/crm",
+            "query": "SELECT * FROM customers WHERE updated_at > '{{ last_run_time }}'",
+            "expected_records": 5000
+          },
+          "dependencies": [],
+          "retry_count": 3,
+          "timeout_seconds": 600
+        },
+        {
+          "id": "validate_data",
+          "name": "Validate Customer Data",
+          "type": "validate",
+          "config": {
+            "validation_rules": [
+              {"field": "email", "rule": "email_format"},
+              {"field": "phone", "rule": "phone_format"},
+              {"field": "customer_id", "rule": "not_null"}
+            ]
+          },
+          "dependencies": ["extract_crm"],
+          "retry_count": 2,
+          "timeout_seconds": 300
+        },
+        {
+          "id": "transform_data",
+          "name": "Transform Customer Data",
+          "type": "transform",
+          "config": {
+            "transformation_type": "customer_normalization",
+            "operations": [
+              {"type": "normalize_phone", "column": "phone"},
+              {"type": "standardize_address", "columns": ["address1", "city", "state"]},
+              {"type": "calculate_lifetime_value", "input_columns": ["orders", "avg_order_value"]}
+            ],
+            "output_records": 4800
+          },
+          "dependencies": ["validate_data"],
+          "retry_count": 3,
+          "timeout_seconds": 900
+        },
+        {
+          "id": "load_warehouse",
+          "name": "Load to Data Warehouse",
+          "type": "load",
+          "config": {
+            "destination_type": "snowflake",
+            "table": "customers_dim",
+            "load_mode": "upsert",
+            "key_columns": ["customer_id"]
+          },
+          "dependencies": ["transform_data"],
+          "retry_count": 2,
+          "timeout_seconds": 600
+        },
+        {
+          "id": "notify_success",
+          "name": "Send Success Notification",
+          "type": "notify",
+          "config": {
+            "notification_type": "email",
+            "recipients": ["data-team@company.com"],
+            "template": "customer_etl_success",
+            "conditions": ["success"]
+          },
+          "dependencies": ["load_warehouse"],
+          "retry_count": 1,
+          "timeout_seconds": 60
+        }
+      ],
+      "tags": ["etl", "customer", "daily"],
+      "created_by": "data_engineer"
+    },
+    {
+      "name": "Log Aggregation Pipeline",
+      "description": "Aggregate application logs and generate insights",
+      "steps": [
+        {
+          "id": "extract_logs",
+          "name": "Extract Application Logs",
+          "type": "extract",
+          "config": {
+            "source_type": "s3",
+            "bucket": "app-logs-bucket",
+            "prefix": "logs/{{ date }}/",
+            "file_pattern": "*.log",
+            "expected_records": 100000
+          },
+          "dependencies": [],
+          "retry_count": 3,
+          "timeout_seconds": 1200
+        },
+        {
+          "id": "parse_logs",
+          "name": "Parse Log Entries",
+          "type": "transform",
+          "config": {
+            "transformation_type": "log_parsing",
+            "parser": "regex",
+            "pattern": "(?P<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) (?P<level>\\w+) (?P<message>.*)",
+            "output_records": 95000
+          },
+          "dependencies": ["extract_logs"],
+          "retry_count": 2,
+          "timeout_seconds": 900
+        },
+        {
+          "id": "aggregate_metrics",
+          "name": "Aggregate Log Metrics",
+          "type": "transform",
+          "config": {
+            "transformation_type": "aggregation",
+            "group_by": ["level", "hour"],
+            "metrics": [
+              {"name": "count", "function": "count"},
+              {"name": "unique_users", "function": "count_distinct", "column": "user_id"}
+            ],
+            "output_records": 1000
+          },
+          "dependencies": ["parse_logs"],
+          "retry_count": 2,
+          "timeout_seconds": 600
+        },
+        {
+          "id": "load_metrics",
+          "name": "Load Metrics to Database",
+          "type": "load",
+          "config": {
+            "destination_type": "postgresql",
+            "table": "log_metrics",
+            "load_mode": "append"
+          },
+          "dependencies": ["aggregate_metrics"],
+          "retry_count": 2,
+          "timeout_seconds": 300
+        }
+      ],
+      "tags": ["logs", "monitoring", "hourly"],
+      "created_by": "devops_engineer"
+    },
+    {
+      "name": "Real-time Stream Processing",
+      "description": "Process real-time events from Kafka and update user profiles",
+      "steps": [
+        {
+          "id": "extract_events",
+          "name": "Extract Events from Kafka",
+          "type": "extract",
+          "config": {
+            "source_type": "kafka",
+            "topic": "user_events",
+            "consumer_group": "profile_updater",
+            "batch_size": 1000,
+            "expected_records": 10000
+          },
+          "dependencies": [],
+          "retry_count": 5,
+          "timeout_seconds": 300
+        },
+        {
+          "id": "enrich_events",
+          "name": "Enrich Event Data",
+          "type": "transform",
+          "config": {
+            "transformation_type": "event_enrichment",
+            "lookup_tables": ["user_profiles", "product_catalog"],
+            "join_keys": {"user_profiles": "user_id", "product_catalog": "product_id"},
+            "output_records": 9500
+          },
+          "dependencies": ["extract_events"],
+          "retry_count": 3,
+          "timeout_seconds": 600
+        },
+        {
+          "id": "update_profiles",
+          "name": "Update User Profiles",
+          "type": "load",
+          "config": {
+            "destination_type": "redis",
+            "key_pattern": "user_profile:{{ user_id }}",
+            "operation": "merge",
+            "ttl_seconds": 86400
+          },
+          "dependencies": ["enrich_events"],
+          "retry_count": 3,
+          "timeout_seconds": 400
+        }
+      ],
+      "tags": ["streaming", "real-time", "user-profiles"],
+      "created_by": "data_engineer"
+    }
+  ],
+  "sample_schedules": [
+    {
+      "name": "Daily Customer ETL",
+      "pipeline_name": "Customer Data ETL",
+      "type": "cron",
+      "cron_expression": "0 2 * * *",
+      "description": "Run customer ETL daily at 2 AM UTC",
+      "resource_requirements": {
+        "cpu_cores": 2.0,
+        "memory_mb": 4096,
+        "disk_gb": 10.0
+      },
+      "max_concurrent_runs": 1,
+      "tags": ["daily", "production"]
+    },
+    {
+      "name": "Hourly Log Processing",
+      "pipeline_name": "Log Aggregation Pipeline",
+      "type": "cron",
+      "cron_expression": "0 * * * *",
+      "description": "Process logs every hour",
+      "resource_requirements": {
+        "cpu_cores": 1.0,
+        "memory_mb": 2048,
+        "disk_gb": 5.0
+      },
+      "max_concurrent_runs": 2,
+      "tags": ["hourly", "monitoring"]
+    },
+    {
+      "name": "Stream Processing",
+      "pipeline_name": "Real-time Stream Processing",
+      "type": "interval",
+      "interval_seconds": 300,
+      "description": "Process streaming events every 5 minutes",
+      "resource_requirements": {
+        "cpu_cores": 1.5,
+        "memory_mb": 3072,
+        "disk_gb": 2.0
+      },
+      "max_concurrent_runs": 3,
+      "tags": ["streaming", "real-time"]
+    }
+  ],
+  "sample_data": {
+    "customers": [
+      {
+        "customer_id": "CUST001",
+        "email": "john.doe@email.com",
+        "phone": "+1-555-0123",
+        "first_name": "John",
+        "last_name": "Doe",
+        "address1": "123 Main St",
+        "city": "New York",
+        "state": "NY",
+        "zip_code": "10001",
+        "created_at": "2023-01-15T10:30:00Z",
+        "lifetime_value": 1250.50
+      },
+      {
+        "customer_id": "CUST002",
+        "email": "jane.smith@email.com",
+        "phone": "+1-555-0456",
+        "first_name": "Jane",
+        "last_name": "Smith",
+        "address1": "456 Oak Ave",
+        "city": "Los Angeles",
+        "state": "CA",
+        "zip_code": "90210",
+        "created_at": "2023-02-20T14:15:00Z",
+        "lifetime_value": 2100.75
+      }
+    ],
+    "log_entries": [
+      {
+        "timestamp": "2024-01-15T14:30:15Z",
+        "level": "INFO",
+        "message": "User login successful",
+        "user_id": "user123",
+        "session_id": "sess_abc123",
+        "ip_address": "192.168.1.100"
+      },
+      {
+        "timestamp": "2024-01-15T14:30:45Z",
+        "level": "ERROR",
+        "message": "Database connection timeout",
+        "component": "auth_service",
+        "error_code": "DB_TIMEOUT",
+        "duration_ms": 5000
+      }
+    ],
+    "events": [
+      {
+        "event_id": "evt_001",
+        "user_id": "user123",
+        "event_type": "page_view",
+        "timestamp": "2024-01-15T14:30:00Z",
+        "properties": {
+          "page": "/products",
+          "referrer": "https://google.com",
+          "user_agent": "Mozilla/5.0..."
+        }
+      },
+      {
+        "event_id": "evt_002",
+        "user_id": "user456",
+        "event_type": "purchase",
+        "timestamp": "2024-01-15T14:31:00Z",
+        "properties": {
+          "product_id": "prod_123",
+          "amount": 99.99,
+          "currency": "USD"
+        }
+      }
+    ]
+  }
+}
